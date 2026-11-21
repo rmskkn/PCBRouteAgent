@@ -1,0 +1,13 @@
+diff --git a/build_rl_router.sh b/build_rl_router.sh
+index 755b4ac..143610c 100755
+--- a/build_rl_router.sh
++++ b/build_rl_router.sh
+@@ -79,7 +79,7 @@ if [ ! -f "$PYTHON_LIBRARY" ]; then
+     # Fallback: search for a Linux .so or macOS .dylib (a conda env's
+     # LDLIBRARY may point to libpython*.a, so the actual shared library is
+     # located separately)
+-    PYTHON_LIBRARY=$(find "$PYTHON_LIB_DIR" -maxdepth 1 -name "libpython3*.so*" -not -name "*.a" 2>/dev/null | head -1)
++    PYTHON_LIBRARY=$(find "$PYTHON_LIB_DIR" -maxdepth 1 -name "libpython3.*.so*" -not -name "*.a" -print -quit 2>/dev/null)
+     if [ -z "$PYTHON_LIBRARY" ]; then
+         PYTHON_LIBRARY=$(find "$PYTHON_LIB_DIR" -maxdepth 1 -name "libpython3*.dylib" 2>/dev/null | head -1)
+     fi

@@ -163,6 +163,56 @@ class AnthropicGlobalProvider:
     replan = _call
 
 
+class ClaudeCLIGlobalProvider:
+    """Global role through the Claude Code CLI (`claude -p`), so it runs on the user's Claude
+    subscription login instead of an API key. Images go to a temp dir and the model opens them
+    with the Read tool; Read is the only tool it gets. User settings, plugins, hooks and MCP
+    servers are not loaded."""
+
+    def __init__(self, model: str | None = None, timeout_s: int | None = None) -> None:
+        self.model = model
+        self.timeout_s = int(timeout_s or os.environ.get("ROUTEAGENT_CLAUDE_CLI_TIMEOUT", 1800))
+
+    def _call(self, bundle: dict) -> tuple[dict, dict]:
+        import subprocess
+        with tempfile.TemporaryDirectory(prefix="routeagent_claude_") as tmp:
+            refs = []
+            for i, im in enumerate(bundle.get("images", [])):
+                p = Path(tmp) / f"{i:02d}_{im['view_id']}.png"
+                p.write_bytes(base64.b64decode(_image_base64(im)))
+                refs.append(f"[image {im['view_id']}] {p}")
+            prompt = bundle["user"]
+            if refs:
+                prompt = ("Open each board image below with the Read tool before answering:\n"
+                          + "\n".join(refs) + "\n\n" + prompt)
+            prompt += "\n\nReply with the JSON object only."
+            cmd = ["claude", "-p", "--output-format", "json", "--system-prompt", bundle["system"],
+                   "--tools", "Read", "--allowedTools", "Read", "--add-dir", tmp,
+                   "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence"]
+            if self.model:
+                cmd += ["--model", self.model]
+            t0 = time.time()
+            proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=tmp, timeout=self.timeout_s)
+        if proc.returncode != 0:
+            raise RuntimeError(f"claude -p exited {proc.returncode}: {(proc.stderr or proc.stdout)[-2000:]}")
+        out = json.loads(proc.stdout)
+        text = out.get("result") or ""
+        if out.get("is_error"):
+            raise RuntimeError(f"claude -p reported an error: {text[-2000:]}")
+        u = out.get("usage") or {}
+        usage = {"provider": "claude_cli", "model": self.model or "cli-default",
+                 "prompt_tokens": u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+                 + u.get("cache_creation_input_tokens", 0),
+                 "completion_tokens": u.get("output_tokens", 0), "wall_s": round(time.time() - t0, 2), "raw": text}
+        try:
+            return _extract_json(_strip_fences(text)), usage
+        except ValueError as ex:
+            raise ValueError(f"Global response is not a JSON object ({ex}); raw kept at {_keep_raw(text)}") from ex
+
+    plan = _call
+    replan = _call
+
+
 def make_global_provider(name: str, **kw):
     """``file`` replays ``guide_path`` for plan() and ``patch_path`` for replan() (either may be
     omitted when that call is never made); ``openai`` / ``anthropic`` call the model named by
@@ -176,7 +226,9 @@ def make_global_provider(name: str, **kw):
         return OpenAIGlobalProvider(model=kw.get("model") or os.environ.get("ROUTEAGENT_OPENAI_MODEL", "gpt-4o"))
     if name == "anthropic":
         return AnthropicGlobalProvider(model=kw.get("model") or os.environ.get("ROUTEAGENT_ANTHROPIC_MODEL", "claude-opus-5-5"))
-    raise ValueError(f"unknown provider {name!r} (expected file|openai|anthropic)")
+    if name == "claude_cli":
+        return ClaudeCLIGlobalProvider(model=kw.get("model") or os.environ.get("ROUTEAGENT_CLAUDE_CLI_MODEL"))
+    raise ValueError(f"unknown provider {name!r} (expected file|openai|anthropic|claude_cli)")
 
 
 class LLMDetailed:

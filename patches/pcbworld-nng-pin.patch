@@ -1,0 +1,13 @@
+diff --git a/environment.yml b/environment.yml
+index 130bb66..20dbd65 100644
+--- a/environment.yml
++++ b/environment.yml
+@@ -44,7 +44,7 @@ dependencies:
+   - glm
+   - libgit2
+   - swig
+-  - nng
++  - nng<2        # nng 2.x drops protocol/reqrep0 headers KiCad kinng needs
+   - unixodbc
+   - libsecret
+   - git-lfs
